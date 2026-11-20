@@ -1,0 +1,135 @@
+diff --git a/riscv/cachesim.cc b/riscv/cachesim.cc
+index 24e87d3..89c25d2 100644
+--- a/riscv/cachesim.cc
++++ b/riscv/cachesim.cc
+@@ -132,6 +132,9 @@ void cache_sim_t::access(uint64_t addr, size_t bytes, bool store)
+   }
+ 
+   store ? write_misses++ : read_misses++;
++  if (miss_callback)
++    miss_callback(name, addr, bytes, store);
++
+   if (log)
+   {
+     std::cerr << name << " "
+diff --git a/riscv/cachesim.h b/riscv/cachesim.h
+index 936268c..c695b78 100644
+--- a/riscv/cachesim.h
++++ b/riscv/cachesim.h
+@@ -9,6 +9,7 @@
+ #include <string>
+ #include <map>
+ #include <cstdint>
++#include <functional>
+ 
+ class lfsr_t
+ {
+@@ -32,6 +33,10 @@ class cache_sim_t
+   void print_stats();
+   void set_miss_handler(cache_sim_t* mh) { miss_handler = mh; }
+   void set_log(bool _log) { log = _log; }
++  using miss_callback_t =
++    std::function<void(const std::string&, uint64_t, size_t, bool)>;
++  void set_miss_callback(miss_callback_t callback)
++    { miss_callback = callback; }
+ 
+   static cache_sim_t* construct(const char* config, const char* name);
+ 
+@@ -62,6 +67,7 @@ class cache_sim_t
+ 
+   std::string name;
+   bool log;
++  miss_callback_t miss_callback;
+ 
+   void init();
+ };
+@@ -100,6 +106,10 @@ class cache_memtracer_t : public memtracer_t
+   {
+     cache->set_log(log);
+   }
++  void set_miss_callback(cache_sim_t::miss_callback_t callback)
++  {
++    cache->set_miss_callback(callback);
++  }
+   void print_stats()
+   {
+     cache->print_stats();
+diff --git a/riscv/mmu.h b/riscv/mmu.h
+index 9e2cd4f..cfc0faf 100644
+--- a/riscv/mmu.h
++++ b/riscv/mmu.h
+@@ -335,7 +335,7 @@ public:
+     if (unlikely(check_tracer)) {
+       if (tracer.interested_in_range(paddr, paddr + 1, FETCH)) {
+         entry->tag = -1;
+-        tracer.trace(paddr, paddr + length, FETCH);
++        tracer.trace(paddr, length, FETCH);
+       }
+     }
+     MMU_OBSERVE_FETCH(addr, insn, length);
+diff --git a/riscv/sim.cc b/riscv/sim.cc
+index 349d6e3..fe946f0 100644
+--- a/riscv/sim.cc
++++ b/riscv/sim.cc
+@@ -535,18 +535,25 @@ void sim_t::idle()
+ 
+   if (debug || ctrlc_pressed)
+     interactive();
+-  else {
++  else
++  {
++    // Preserve normal Spike behaviour unless a SystemC callback is installed.
++    // In co-simulation mode one idle() call represents one 1 GHz CPU cycle.
++    const size_t quantum = systemc_step_callback ? 1 : INTERLEAVE;
++
+     if (instruction_limit.has_value()) {
+-      if (*instruction_limit < INTERLEAVE) {
++      if (*instruction_limit < quantum) {
+         // Final step.
+         step(*instruction_limit);
+         htif_exit(0);
+         *instruction_limit = 0;
+         return;
+       }
+-      *instruction_limit -= INTERLEAVE;
++      *instruction_limit -= quantum;
+     }
+-    step(INTERLEAVE);
++    step(quantum);
++    if (systemc_step_callback)
++      systemc_step_callback();
+   }
+ 
+   if (remote_bitbang) {
+diff --git a/riscv/sim.h b/riscv/sim.h
+index bd97edc..549b314 100644
+--- a/riscv/sim.h
++++ b/riscv/sim.h
+@@ -19,6 +19,7 @@
+ #include <memory>
+ #include <sys/types.h>
+ #include <optional>
++#include <functional>
+ 
+ class mmu_t;
+ class remote_bitbang_t;
+@@ -48,6 +49,11 @@ public:
+   void set_histogram(bool value);
+   void add_device(reg_t addr, std::shared_ptr<abstract_device_t> dev);
+ 
++  // When installed, idle() advances exactly one instruction and then invokes
++  // this callback.  A SystemC SC_THREAD can use it to wait for one clock cycle.
++  void set_systemc_step_callback(std::function<void()> callback) {
++    systemc_step_callback = callback;
++  }
+   // Configure logging
+   //
+   // If enable_log is true, an instruction trace will be generated. If
+@@ -113,6 +119,7 @@ private:
+   bool debug;
+   bool histogram_enabled; // provide a histogram of PCs
+   bool log;
++  std::function<void()> systemc_step_callback;
+   remote_bitbang_t* remote_bitbang;
+   std::optional<std::function<void()>> next_interactive_action;
+ 

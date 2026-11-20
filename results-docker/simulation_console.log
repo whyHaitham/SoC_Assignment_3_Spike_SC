@@ -1,0 +1,29 @@
+
+        SystemC 2.3.3-Accellera --- Nov 18 2026 19:39:54
+        Copyright (c) 1996-2018 by all Contributors,
+        ALL RIGHTS RESERVED
+TrafficGen started: ratio=50, pause=0, workers=1, elements=8000
+TrafficGen ROI: 4 iterations
+TrafficGen finished
+[0 s] starting Spike, clock 1 ns (1 GHz)
+[516387 ns] entered MESS ROI
+[762127 ns] left MESS ROI
+[766411 ns] Spike exited with status 0 after 766411 instructions; 8255 cache misses logged in the ROI
+D$ Bytes Read:            1335845
+D$ Bytes Written:         1092597
+D$ Read Accesses:         179059
+D$ Write Accesses:        138281
+D$ Read Misses:           4782
+D$ Write Misses:          8789
+D$ Writebacks:            8982
+D$ Miss Rate:             4.276%
+I$ Bytes Read:            2301146
+I$ Bytes Written:         0
+I$ Read Accesses:         767072
+I$ Write Accesses:        0
+I$ Read Misses:           652
+I$ Write Misses:          0
+I$ Writebacks:            0
+I$ Miss Rate:             0.085%
+
+Info: /OSCI/SystemC: Simulation stopped by user.

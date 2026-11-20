@@ -1,0 +1,76 @@
+--- a/src/traffic_gen/src/traffic_gen.c	2026-11-18 22:01:43
++++ b/src/traffic_gen/src/traffic_gen.c	2026-11-18 22:01:43
+@@ -147,6 +147,18 @@
+ #define TrafficGen_TYPE double
+ #endif
+ 
++/* Spike/SystemC co-simulation: region-of-interest markers.  The SystemC
++ * wrapper starts/stops cache-miss logging when the PC reaches these symbols. */
++__attribute__((noinline, noclone)) void mess_roi_begin(void)
++{
++    __asm__ __volatile__("nop" ::: "memory");
++}
++
++__attribute__((noinline, noclone)) void mess_roi_end(void)
++{
++    __asm__ __volatile__("nop" ::: "memory");
++}
++
+ static TrafficGen_TYPE* a;
+ static TrafficGen_TYPE* b;
+ static ssize_t array_elements;
+@@ -176,13 +188,15 @@
+     int workers = 1;
+     double self_benchmark_seconds = 0.0;
+     const char* fifo_path = NULL;
++    unsigned long long iterations = 0;   /* 0 = run forever (upstream) */
+     static struct option long_options[] = {
+         {"size", no_argument, 0, 'S'},
+         {"self-benchmark", required_argument, 0, 'B'},
++        {"iterations", required_argument, 0, 'n'},
+         {0, 0, 0, 0}
+     };
+ 
+-    while ((opt = getopt_long(argc, argv, ":r:p:w:v:a:B:Sf:", long_options, NULL)) != -1) {
++    while ((opt = getopt_long(argc, argv, ":r:p:w:v:a:B:Sf:n:", long_options, NULL)) != -1) {
+         switch (opt) {
+             case 'S':
+                 printf("traffic_gen_array_elements=%llu\n", (unsigned long long)TrafficGen_ARRAY_SIZE);
+@@ -236,6 +250,15 @@
+                 break;
+             case 'f':
+                 fifo_path = optarg;
++                break;
++            case 'n':
++                {
++                    char *endptr;
++                    iterations = strtoull(optarg, &endptr, 10);
++                    if (*endptr != '\0') {
++                        return 1;
++                    }
++                }
+                 break;
+             default:
+                 return 1;
+@@ -394,6 +417,21 @@
+         mess_signal_ready(fifo_path);
+     }
+ 
++    if (iterations > 0) {
++        /* Bounded run for simulation: N passes over the arrays inside the ROI. */
++        fprintf(stdout, "TrafficGen ROI: %llu iterations\n", iterations);
++        fflush(stdout);
++        mess_roi_begin();
++        for (unsigned long long it = 0; it < iterations; ++it) {
++            TrafficGen_copy_rw(a, b, &array_elements, &pause, rd_percentage);
++        }
++        mess_roi_end();
++        fprintf(stdout, "TrafficGen finished\n");
++        release_array(a, array_bytes, a_via_mmap);
++        release_array(b, array_bytes, b_via_mmap);
++        return 0;
++    }
++
+     for (;;) {
+         {
+             TrafficGen_copy_rw(a, b, &array_elements, &pause, rd_percentage);
